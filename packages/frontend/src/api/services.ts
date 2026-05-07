@@ -117,7 +117,7 @@ export async function fetchConsoleOverview(signal?: AbortSignal): Promise<Consol
 export async function listServiceResources(service: ServiceName, signal?: AbortSignal): Promise<ResourceSummary[]> {
     if (service === 's3') return listS3Buckets(signal)
     if (service === 'sqs') return listSqsQueues(signal)
-    if (service === 'sns') return listSnsTopics(signal)
+    if (service === 'sns') return listSnsTopicResources(signal)
     if (service === 'lambda') return listLambdaFunctions(signal)
     if (service === 'dynamodb') return listDynamoDbTables(signal)
     if (service === 'cloudwatch') return listCloudWatchResources(signal)
@@ -246,8 +246,33 @@ export interface SqsQueueAttributes {
     contentBasedDeduplication?: boolean
 }
 
+export interface SqsQueueConfig {
+    fifo: boolean
+    visibilityTimeout: number
+    messageRetentionPeriod: number
+    contentBasedDeduplication?: boolean
+}
+
+export interface SqsTag {
+    key: string
+    value: string
+}
+
 export async function getSqsQueueAttributes(queueUrl: string, signal?: AbortSignal): Promise<SqsQueueAttributes> {
     return apiGet<SqsQueueAttributes>(`/sqs/queue/attributes?url=${encodeURIComponent(queueUrl)}`, 'sqs', signal)
+}
+
+export async function createSqsQueue(name: string, config: SqsQueueConfig, signal?: AbortSignal): Promise<string> {
+    const res = await apiPost<{name: string; url: string}>('/sqs/queues', 'sqs', {name, ...config}, signal)
+    return res.url
+}
+
+export async function deleteSqsQueue(queueUrl: string, signal?: AbortSignal): Promise<void> {
+    await apiDelete(`/sqs/queue?url=${encodeURIComponent(queueUrl)}`, 'sqs', signal)
+}
+
+export async function purgeSqsQueue(queueUrl: string, signal?: AbortSignal): Promise<void> {
+    await apiPost('/sqs/queue/purge', 'sqs', {url: queueUrl}, signal)
 }
 
 export async function sendSqsMessage(queueUrl: string, messageBody: string, signal?: AbortSignal): Promise<string> {
@@ -267,14 +292,101 @@ export async function peekSqsMessages(queueUrl: string, max = 10, signal?: Abort
     return apiGet<SqsMessage[]>(`/sqs/queue/messages?url=${encodeURIComponent(queueUrl)}&max=${max}`, 'sqs', signal)
 }
 
+export async function deleteSqsMessage(queueUrl: string, receiptHandle: string, signal?: AbortSignal): Promise<void> {
+    await apiPost('/sqs/queue/message/delete', 'sqs', {url: queueUrl, receiptHandle}, signal)
+}
+
+export async function getSqsQueueTags(queueUrl: string, signal?: AbortSignal): Promise<SqsTag[]> {
+    return apiGet<SqsTag[]>(`/sqs/queue/tags?url=${encodeURIComponent(queueUrl)}`, 'sqs', signal)
+}
+
+export async function setSqsQueueTags(queueUrl: string, tags: SqsTag[], signal?: AbortSignal): Promise<void> {
+    await apiPut('/sqs/queue/tags', 'sqs', {url: queueUrl, tags}, signal)
+}
+
+export async function removeSqsQueueTags(queueUrl: string, keys: string[], signal?: AbortSignal): Promise<void> {
+    await apiPost('/sqs/queue/tags/delete', 'sqs', {url: queueUrl, keys}, signal)
+}
+
 // ─── SNS ──────────────────────────────────────────────────────────────────────
 
-async function listSnsTopics(signal?: AbortSignal): Promise<ResourceSummary[]> {
+export interface SnsTopic {
+    arn: string
+    name: string
+    fifo: boolean
+}
+
+export interface SnsSubscription {
+    subscriptionArn: string
+    protocol: string
+    endpoint: string
+    topicArn: string
+}
+
+export interface SnsTag {
+    key: string
+    value: string
+}
+
+async function listSnsTopicResources(signal?: AbortSignal): Promise<ResourceSummary[]> {
     const topics = await apiGet<Array<{name: string; arn: string}>>('/sns/topics', 'sns', signal)
     return topics.map(t => ({id: t.arn, name: t.name, status: 'available', metadata: {arn: t.arn}}))
 }
 
+export async function listSnsTopicsDetail(signal?: AbortSignal): Promise<SnsTopic[]> {
+    return apiGet<SnsTopic[]>('/sns/topics', 'sns', signal)
+}
+
+export async function createSnsTopic(name: string, fifo: boolean, signal?: AbortSignal): Promise<SnsTopic> {
+    return apiPost<SnsTopic>('/sns/topics', 'sns', {name, fifo}, signal)
+}
+
+export async function deleteSnsTopic(arn: string, signal?: AbortSignal): Promise<void> {
+    await apiDelete(`/sns/topics?arn=${encodeURIComponent(arn)}`, 'sns', signal)
+}
+
+export async function listSubscriptionsByTopic(topicArn: string, signal?: AbortSignal): Promise<SnsSubscription[]> {
+    return apiGet<SnsSubscription[]>(`/sns/subscriptions?topicArn=${encodeURIComponent(topicArn)}`, 'sns', signal)
+}
+
+export async function subscribeToTopic(topicArn: string, protocol: string, endpoint: string, signal?: AbortSignal): Promise<{subscriptionArn: string}> {
+    return apiPost<{subscriptionArn: string}>('/sns/subscriptions', 'sns', {topicArn, protocol, endpoint}, signal)
+}
+
+export async function unsubscribeFromTopic(subscriptionArn: string, signal?: AbortSignal): Promise<void> {
+    await apiDelete(`/sns/subscriptions?arn=${encodeURIComponent(subscriptionArn)}`, 'sns', signal)
+}
+
+export async function publishSnsMessage(topicArn: string, message: string, subject?: string, signal?: AbortSignal): Promise<string> {
+    const res = await apiPost<{messageId: string}>('/sns/publish', 'sns', {topicArn, message, subject}, signal)
+    return res.messageId
+}
+
+export async function getSnsTopicAttributes(topicArn: string, signal?: AbortSignal): Promise<Record<string, string>> {
+    return apiGet<Record<string, string>>(`/sns/topics/attributes?arn=${encodeURIComponent(topicArn)}`, 'sns', signal)
+}
+
+export async function listSnsTopicTags(topicArn: string, signal?: AbortSignal): Promise<SnsTag[]> {
+    return apiGet<SnsTag[]>(`/sns/topics/tags?arn=${encodeURIComponent(topicArn)}`, 'sns', signal)
+}
+
+export async function setSnsTopicTags(topicArn: string, tags: SnsTag[], signal?: AbortSignal): Promise<void> {
+    await apiPut('/sns/topics/tags', 'sns', {arn: topicArn, tags}, signal)
+}
+
+export async function removeSnsTopicTags(topicArn: string, keys: string[], signal?: AbortSignal): Promise<void> {
+    await apiPost('/sns/topics/tags/delete', 'sns', {arn: topicArn, keys}, signal)
+}
+
 // ─── Lambda ───────────────────────────────────────────────────────────────────
+
+export interface LambdaInvokeResult {
+    statusCode: number
+    payload: string
+    functionError?: string
+    logResult?: string
+    executionDuration?: number
+}
 
 async function listLambdaFunctions(signal?: AbortSignal): Promise<ResourceSummary[]> {
     const fns = await apiGet<Array<{
@@ -291,25 +403,103 @@ async function listLambdaFunctions(signal?: AbortSignal): Promise<ResourceSummar
     }))
 }
 
+export interface LambdaFunctionConfig {
+    name: string
+    functionArn?: string
+    runtime?: string
+    handler?: string
+    state?: string
+    stateReason?: string
+    lastModified?: string
+    memorySize?: number
+    timeout?: number
+    codeSize?: number
+    packageType?: string
+    description?: string
+    architectures?: string[]
+    role?: string
+    environment?: Record<string, string>
+}
+
+export async function getLambdaFunction(name: string, signal?: AbortSignal): Promise<LambdaFunctionConfig> {
+    return apiGet<LambdaFunctionConfig>(`/lambda/functions/${encodeURIComponent(name)}`, 'lambda', signal)
+}
+
+export async function invokeLambdaFunction(name: string, payload: string, signal?: AbortSignal): Promise<LambdaInvokeResult> {
+    return apiPost<LambdaInvokeResult>(`/lambda/functions/${encodeURIComponent(name)}/invoke`, 'lambda', {payload}, signal)
+}
+
+export async function deleteLambdaFunction(name: string, signal?: AbortSignal): Promise<void> {
+    await apiDelete(`/lambda/functions/${encodeURIComponent(name)}`, 'lambda', signal)
+}
+
 // ─── DynamoDB ─────────────────────────────────────────────────────────────────
+
+export interface DynamoDbKeyAttr {
+    name: string
+    keyType: 'HASH' | 'RANGE'
+    attrType: 'S' | 'N' | 'B'
+}
+
+export type DynamoDbItem = Record<string, unknown>
 
 async function listDynamoDbTables(signal?: AbortSignal): Promise<ResourceSummary[]> {
     const tables = await apiGet<Array<{
         name: string; arn?: string; status?: string
         itemCount?: number; sizeBytes?: number; billingMode?: string; createdAt?: string
+        keySchema?: DynamoDbKeyAttr[]
     }>>('/dynamodb/tables', 'dynamodb', signal)
     return tables.map(t => ({
         id: t.arn ?? t.name,
         name: t.name,
         status: t.status ?? 'unknown',
-        metadata: {itemCount: t.itemCount, sizeBytes: t.sizeBytes, billingMode: t.billingMode, createdAt: t.createdAt},
+        metadata: {itemCount: t.itemCount, sizeBytes: t.sizeBytes, billingMode: t.billingMode, createdAt: t.createdAt, keySchema: t.keySchema},
     }))
 }
 
-export type DynamoDbItem = Record<string, unknown>
-
 export async function scanDynamoDbTable(tableName: string, limit = 50, signal?: AbortSignal): Promise<{items: DynamoDbItem[]; count: number; scannedCount: number}> {
     return apiGet(`/dynamodb/${encodeURIComponent(tableName)}/items?limit=${limit}`, 'dynamodb', signal)
+}
+
+export async function queryDynamoDbTable(
+    tableName: string,
+    pkName: string,
+    pkValue: string | number,
+    skName?: string,
+    skOperator?: string,
+    skValue?: string | number,
+    skValue2?: string | number,
+    limit = 50,
+    signal?: AbortSignal,
+): Promise<{items: DynamoDbItem[]; count: number; scannedCount: number}> {
+    const params = new URLSearchParams({pkName, pkValue: String(pkValue), limit: String(limit)})
+    if (skName) params.set('skName', skName)
+    if (skOperator) params.set('skOperator', skOperator)
+    if (skValue !== undefined) params.set('skValue', String(skValue))
+    if (skValue2 !== undefined) params.set('skValue2', String(skValue2))
+    return apiGet(`/dynamodb/${encodeURIComponent(tableName)}/items/query?${params}`, 'dynamodb', signal)
+}
+
+export async function createDynamoDbTable(
+    name: string,
+    pk: {name: string; type: string},
+    sk?: {name: string; type: string},
+    billingMode?: string,
+    signal?: AbortSignal,
+): Promise<void> {
+    await apiPost('/dynamodb/tables', 'dynamodb', {name, pk, sk, billingMode}, signal)
+}
+
+export async function deleteDynamoDbTable(name: string, signal?: AbortSignal): Promise<void> {
+    await apiDelete(`/dynamodb/${encodeURIComponent(name)}`, 'dynamodb', signal)
+}
+
+export async function putDynamoDbItem(tableName: string, item: DynamoDbItem, signal?: AbortSignal): Promise<void> {
+    await apiPut(`/dynamodb/${encodeURIComponent(tableName)}/items`, 'dynamodb', {item}, signal)
+}
+
+export async function deleteDynamoDbItem(tableName: string, key: DynamoDbItem, signal?: AbortSignal): Promise<void> {
+    await apiPost(`/dynamodb/${encodeURIComponent(tableName)}/items/delete`, 'dynamodb', {key}, signal)
 }
 
 // ─── CloudWatch ───────────────────────────────────────────────────────────────
@@ -354,8 +544,16 @@ export async function createLogGroup(logGroupName: string, retentionInDays?: num
     await apiPost('/cloudwatch/log-groups', 'cloudwatch', {name: logGroupName, retentionInDays})
 }
 
+export async function deleteLogGroup(logGroupName: string): Promise<void> {
+    await apiDelete(`/cloudwatch/log-groups?name=${encodeURIComponent(logGroupName)}`, 'cloudwatch')
+}
+
 export async function createLogStream(logGroupName: string, logStreamName: string): Promise<void> {
     await apiPost('/cloudwatch/log-streams', 'cloudwatch', {group: logGroupName, name: logStreamName})
+}
+
+export async function deleteLogStream(logGroupName: string, logStreamName: string): Promise<void> {
+    await apiDelete(`/cloudwatch/log-streams?group=${encodeURIComponent(logGroupName)}&stream=${encodeURIComponent(logStreamName)}`, 'cloudwatch')
 }
 
 export async function putLogEvents(logGroupName: string, logStreamName: string, logEvents: Array<{timestamp: number; message: string}>): Promise<void> {
