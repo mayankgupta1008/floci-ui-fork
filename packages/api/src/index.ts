@@ -10,7 +10,7 @@ import lambda from './routes/lambda'
 import dynamodb from './routes/dynamodb'
 import cloudwatch from './routes/cloudwatch'
 
-const app = new Hono()
+const app = new Hono().basePath(process.env.FLOCI_UI_BASE_PATH ?? '/')
 
 app.use('*', cors())
 app.use('*', logger())
