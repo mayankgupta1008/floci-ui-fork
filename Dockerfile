@@ -1,6 +1,7 @@
-# Stage 1 — build frontend with a placeholder base
+# Stage 1 — build frontend
 FROM node:20-alpine AS frontend-build
-ENV FLOCI_UI_BASE_PATH=/__FLOCI_BASE__
+ARG FLOCI_UI_BASE_PATH=/
+ENV FLOCI_UI_BASE_PATH=$FLOCI_UI_BASE_PATH
 WORKDIR /app
 COPY packages/frontend/package.json ./
 RUN npm install
@@ -15,25 +16,12 @@ RUN bun install
 COPY packages/api/src ./src
 RUN bun build --compile --minify src/index.ts --outfile server
 
-# Stage 3 — minimal runtime
+# Stage 3 — minimal runtime (no bun, no node_modules)
 FROM alpine:3
 RUN apk add --no-cache ca-certificates libstdc++
 WORKDIR /app
 COPY --from=api-build /app/server ./server
 COPY --from=frontend-build /app/dist ./public
-
-COPY <<'EOF' /entrypoint.sh
-#!/bin/sh
-set -e
-BASE="${FLOCI_UI_BASE_PATH:-/}"
-[ "$BASE" = "/" ] && PREFIX="" || PREFIX="${BASE%/}"
-find /app/public -type f \( -name '*.js' -o -name '*.html' -o -name '*.css' \) \
-  -exec sed -i "s|/__FLOCI_BASE__|${PREFIX}|g" {} +
-exec "$@"
-EOF
-RUN chmod +x /entrypoint.sh
-
 ENV PORT=3000
 EXPOSE 3000
-ENTRYPOINT ["/entrypoint.sh"]
 CMD ["./server"]
