@@ -1,6 +1,6 @@
 import {FlociError} from './types'
 
-export const API_BASE = `${import.meta.env.BASE_URL}api`
+export const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`
 
 
 export interface FlociRequestEvent {
