@@ -1,5 +1,7 @@
 # Stage 1 — build frontend
 FROM node:20-alpine AS frontend-build
+ARG FLOCI_UI_BASE_PATH=/
+ENV FLOCI_UI_BASE_PATH=$FLOCI_UI_BASE_PATH
 WORKDIR /app
 COPY packages/frontend/package.json ./
 RUN npm install
