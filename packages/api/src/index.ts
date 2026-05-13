@@ -10,7 +10,8 @@ import lambda from './routes/lambda'
 import dynamodb from './routes/dynamodb'
 import cloudwatch from './routes/cloudwatch'
 
-const app = new Hono().basePath(process.env.FLOCI_UI_BASE_PATH ?? '/')
+const BASE = process.env.FLOCI_UI_BASE_PATH ?? '/'
+const app = new Hono().basePath(BASE)
 
 app.use('*', cors())
 app.use('*', logger())
@@ -24,7 +25,7 @@ app.route('/api/dynamodb', dynamodb)
 app.route('/api/cloudwatch', cloudwatch)
 
 // Serve static frontend files when public/ directory is present (production)
-app.use('*', serveStatic({root: './public'}))
+app.use('*', serveStatic({root: './public', rewriteRequestPath: (p) => p.replace(BASE, '')}))
 app.get('*', serveStatic({path: './public/index.html'}))
 
 const port = Number(process.env.PORT ?? 3001)
