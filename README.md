@@ -229,33 +229,83 @@ Remaining gaps:
 
 ## Setup
 
-Install dependencies:
+### Prerequisites
+
+- Node.js 20 or newer.
+- pnpm 9 or newer.
+- Bun, required by `packages/api`.
+- Floci core running on `http://localhost:4566`.
+
+### 1. Start Floci core
+
+Floci UI needs a running Floci core server before the API and frontend can load resources.
+
+Use Docker:
 
 ```bash
-npm install
+docker run -d --name floci \
+  -p 4566:4566 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e FLOCI_DEFAULT_REGION=us-east-1 \
+  -u root \
+  floci/floci:latest
 ```
 
-Create local environment:
+Or use a local clone of `floci-io/floci`:
+
+```bash
+git clone https://github.com/floci-io/floci.git ../floci
+cd ../floci
+./mvnw clean quarkus:dev
+```
+
+In both cases, verify Floci core is reachable:
+
+```bash
+curl http://localhost:4566/_floci/health
+```
+
+### 2. Install Floci UI dependencies
+
+```bash
+pnpm install
+```
+
+### 3. Configure local environment
 
 ```bash
 cp .env.example .env
 ```
 
-Start Floci core:
+Default `.env` values:
 
 ```bash
-cd ../floci
-./mvnw clean quarkus:dev
+FLOCI_ENDPOINT=http://localhost:4566
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+PORT=3001
 ```
 
-Start Floci UI:
+### 4. Start the local API
+
+In one terminal:
 
 ```bash
-cd ../floci-ui
-npm run dev
+pnpm dev:api
 ```
 
-Open:
+This starts `packages/api` on `http://localhost:3001` and points AWS SDK clients at `FLOCI_ENDPOINT`.
+
+### 5. Start the frontend
+
+In another terminal:
+
+```bash
+pnpm dev
+```
+
+Open the UI:
 
 ```text
 http://127.0.0.1:3000/
@@ -264,18 +314,21 @@ http://127.0.0.1:3000/
 ## Environment
 
 ```bash
-VITE_FLOCI_BASE_URL=http://localhost:4566
-VITE_MOCK_MODE=false
+FLOCI_ENDPOINT=http://localhost:4566
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+PORT=3001
 ```
 
-`VITE_MOCK_MODE=true` is only for UI smoke testing. In mock mode, the UI returns empty states instead of fake service resources.
+Floci credentials can be any non-empty value for local development. They are required because the AWS SDK expects credentials, but Floci does not require real AWS credentials.
 
 ## Verification
 
 ```bash
-npm run lint
-npm run type-check
-npm run build
+pnpm lint
+pnpm type-check
+pnpm build
 ```
 
 ## Design Direction
