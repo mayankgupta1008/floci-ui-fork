@@ -50,7 +50,7 @@ These percentages describe UI coverage for the connected Floci service, not back
 |---|---:|---|
 | S3 | 95% | Full bucket and object lifecycle. List, create, delete buckets. Browse objects by prefix with folder navigation. Upload, download, delete, bulk-delete, and copy objects. Read object metadata and tags. Read/update bucket tags and versioning. |
 | DynamoDB | 95% | Full table lifecycle. List, describe, create, delete tables. Scan with configurable limit. Query by partition key with sort-key operators. Create, edit, and delete items via JSON editor. Key schema badges and typed value rendering. |
-| SQS | 95% | Full queue lifecycle. List, create, delete, purge queues. FIFO and content-based deduplication support. Send messages. Peek messages. Delete individual messages. Inline purge confirmation. |
+| SQS | 100% | Full queue lifecycle and management. List, create, delete, purge queues. Send single (FIFO-aware) and batch messages. Peek and delete messages. Queue tags. Editable configuration. Dead-letter queue config and redrive. |
 | Lambda | 90% | Full function detail. List functions, filter by name or runtime. Detail drawer with runtime, state, architecture, ARN, handler, memory, timeout, code size, environment variables. Invoke with JSON payload, response display, and log tail. Delete function. |
 | SNS | 90% | Full topic lifecycle. List, create (standard and FIFO), delete topics. List and manage subscriptions per topic (sqs, lambda, http, https, email, sms). Subscribe and unsubscribe endpoints. Publish messages with optional subject. |
 | CloudWatch | 90% | Full log management. List, filter, create, delete log groups with retention policy. List and delete log streams. Browse and search log events. Rich parsing of Floci ingestor events into HTTP method/status/latency rows. List metrics and alarms. Auto-refresh every 10 s. |
@@ -76,7 +76,10 @@ Placeholder services today:
 
 ## Service Detail
 
-### S3 — 95%
+<details>
+<summary><strong>S3 — 95%</strong></summary>
+
+### S3
 
 Implemented:
 
@@ -105,7 +108,12 @@ Remaining gaps:
 | Presigned URL workflow | Available through AWS-compatible S3 behavior |
 | Multipart upload UI | Available in core, not exposed in UI |
 
-### DynamoDB — 95%
+</details>
+
+<details>
+<summary><strong>DynamoDB — 95%</strong></summary>
+
+### DynamoDB
 
 Implemented:
 
@@ -131,7 +139,12 @@ Remaining gaps:
 | GSI / LSI management | `UpdateTable` |
 | UpdateItem (partial update) | `UpdateItem` — current edit uses PutItem which replaces the full item |
 
-### SQS — 95%
+</details>
+
+<details>
+<summary><strong>SQS — 100%</strong></summary>
+
+### SQS
 
 Implemented:
 
@@ -141,20 +154,28 @@ Implemented:
 - Purge queue with inline amber warning.
 - Select queue and read attributes.
 - Show message counts.
-- Show configuration (visibility timeout, retention, max message size, FIFO, receive wait).
-- Send message.
+- Edit queue configuration via the Settings tab (visibility timeout, delivery delay, receive wait time, max message size, retention).
+- Send message — FIFO-aware: a message group id is sent for FIFO queues, and a deduplication id is generated only when the queue does not use content-based deduplication.
+- Send message batch (up to 10, with an explicit over-limit warning).
 - Peek messages without consuming them.
 - Delete individual messages after peek.
+- Queue tags: list, add, and remove.
+- Dead-letter queue configuration: set and clear a redrive policy targeting another queue.
+- Dead-letter redrive: list the source queues this queue serves, and start a message move task to send their messages back.
 
-Remaining gaps:
+Known limitations:
 
-| Feature | Floci API availability |
+| Feature | Status |
 |---|---|
-| Send message batch | `SendMessageBatch` |
-| Queue tags | `ListQueueTags` / `TagQueue` / `UntagQueue` |
-| Dead-letter queue configuration UI | `GetQueueAttributes` / `SetQueueAttributes` |
+| Redrive task history | Floci core accepts `StartMessageMoveTask`, but its `ListMessageMoveTasks` handler currently returns no results — the task table stays empty until Floci core is fixed |
+| Per-message visibility control | `ChangeMessageVisibility` is not yet surfaced |
 
-### Lambda — 90%
+</details>
+
+<details>
+<summary><strong>Lambda — 90%</strong></summary>
+
+### Lambda
 
 Implemented:
 
@@ -176,7 +197,12 @@ Remaining gaps:
 | Versions | `ListVersionsByFunction` |
 | Link to CloudWatch log group | CloudWatch log groups (by convention `/aws/lambda/{name}`) |
 
-### CloudWatch — 90%
+</details>
+
+<details>
+<summary><strong>CloudWatch — 90%</strong></summary>
+
+### CloudWatch
 
 Implemented:
 
@@ -204,7 +230,12 @@ Remaining gaps:
 | Create log stream from UI | `CreateLogStream` — streams are currently created by the ingestor only |
 | Manual PutLogEvents from UI | `PutLogEvents` |
 
-### SNS — 90%
+</details>
+
+<details>
+<summary><strong>SNS — 90%</strong></summary>
+
+### SNS
 
 Implemented:
 
@@ -227,35 +258,98 @@ Remaining gaps:
 | Subscription confirmation flow | Protocol-specific — email/http require confirmation before `SubscriptionArn` is active |
 | Subscription filter policies | `SetSubscriptionAttributes` |
 
+</details>
+
 ## Setup
 
-Install dependencies:
+### Prerequisites
+
+- Node.js 20 or newer.
+- pnpm 9 or newer.
+- Bun, required by `packages/api`.
+- Docker, if you want to run Floci with the published container image.
+
+### 1. Start Floci core
+
+Floci UI needs a running Floci core server before the API and frontend can load resources.
+
+Terminal 1, using Docker:
 
 ```bash
-npm install
+docker run -d --name floci \
+  -p 4566:4566 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e FLOCI_DEFAULT_REGION=us-east-1 \
+  -u root \
+  floci/floci:latest
 ```
 
-Create local environment:
+Terminal 1, or using a local clone of `floci-io/floci`:
+
+```bash
+git clone https://github.com/floci-io/floci.git ../floci
+cd ../floci
+./mvnw clean quarkus:dev
+```
+
+In both cases, verify Floci core is reachable:
+
+```bash
+curl http://localhost:4566/_floci/health
+```
+
+For local development, the UI needs all three of these components running:
+
+1. Floci core on `http://localhost:4566`.
+2. The Floci UI API backend on `http://localhost:3001` via `pnpm dev:api`.
+3. The frontend dev server on `http://localhost:3000` via `pnpm dev`.
+
+The frontend expects `/api/*` endpoints from `packages/api`, so running only `pnpm dev` is not enough.
+
+### 2. Install Floci UI dependencies
+
+```bash
+pnpm install
+```
+
+### 3. Configure local environment
 
 ```bash
 cp .env.example .env
 ```
 
-Start Floci core:
+Default `.env` values:
 
 ```bash
-cd ../floci
-./mvnw clean quarkus:dev
+FLOCI_ENDPOINT=http://localhost:4566
+VITE_MOCK_MODE=false
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+PORT=3001
 ```
 
-Start Floci UI:
+`.env.example` already includes `VITE_MOCK_MODE=false` for real Floci usage.
+
+### 4. Start the local API
+
+Terminal 2:
 
 ```bash
-cd ../floci-ui
-npm run dev
+pnpm dev:api
 ```
 
-Open:
+This starts `packages/api` on `http://localhost:3001` and points AWS SDK clients at `FLOCI_ENDPOINT`.
+
+### 5. Start the frontend
+
+Terminal 3:
+
+```bash
+pnpm dev
+```
+
+Open the UI:
 
 ```text
 http://127.0.0.1:3000/
@@ -264,18 +358,22 @@ http://127.0.0.1:3000/
 ## Environment
 
 ```bash
-VITE_FLOCI_BASE_URL=http://localhost:4566
+FLOCI_ENDPOINT=http://localhost:4566
 VITE_MOCK_MODE=false
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+PORT=3001
 ```
 
-`VITE_MOCK_MODE=true` is only for UI smoke testing. In mock mode, the UI returns empty states instead of fake service resources.
+Floci credentials can be any non-empty value for local development. They are required because the AWS SDK expects credentials, but Floci does not require real AWS credentials.
 
 ## Verification
 
 ```bash
-npm run lint
-npm run type-check
-npm run build
+pnpm lint
+pnpm type-check
+pnpm build
 ```
 
 ## Design Direction
